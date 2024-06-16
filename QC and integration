@@ -1,0 +1,216 @@
+#### Load libraries####
+library(Seurat)
+library(ggplot2)
+library(SingleR)
+library(dplyr)
+library(celldex)
+library(RColorBrewer)
+library(SingleCellExperiment)
+library(clustree)
+library(openxlsx)
+library(rio)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+
+
+#### Load Day 10 data####
+CON <- `SG-D10-noFMB_ready`
+FMB <- `SG-D10-FMB_ready`
+
+rm(`SG-D10-noFMB_ready`)
+rm(`SG-D10-FMB_ready`)
+
+
+#### Load Day 5 data####
+CON <- `SG-D5-noFMB_ready`
+FMB <- `SG-D5-FMB_ready`
+
+rm(`SG-D5-noFMB_ready`)
+rm(`SG-D5-FMB_ready`)
+
+
+#### Load Day 3 data####
+CON <- `SG-D3-noFMB_ready`
+FMB <- `SG-D3-FMB_ready`
+
+rm(`SG-D3-noFMB_ready`)
+rm(`SG-D3-FMB_ready`)
+
+
+#### Load Day 1 data####
+CON <- `SG-D1-noFMB_ready`
+FMB <- `SG-D1-FMB_ready`
+
+rm(`SG-D1-noFMB_ready`)
+rm(`SG-D1-FMB_ready`)
+
+
+#### Adding mitochondrial and ribosomal transcripts to object####
+#Control
+CON[["percent.mt"]]  <- PercentageFeatureSet(CON, pattern = "^MT-")
+CON[["percent.rb"]] <- PercentageFeatureSet(CON, pattern = "^RP[SL]")
+
+#FMB
+FMB[["percent.mt"]]  <- PercentageFeatureSet(FMB, pattern = "^MT-")
+FMB[["percent.rb"]] <- PercentageFeatureSet(FMB, pattern = "^RP[SL]")
+
+
+#### Load Day 10, experiment 1 filtering parameters####
+#Control
+CON <- subset(CON, subset = nFeature_RNA > 150 & nFeature_RNA < 3500 & percent.mt < 15)
+
+#FMB
+FMB <- subset(FMB, subset = nFeature_RNA > 200 & nFeature_RNA < 3500 & percent.mt < 15)
+
+#### Load Day 5, experiment 1 filtering parameters####
+#Control
+CON <- subset(CON, subset = nFeature_RNA > 150 & nFeature_RNA < 5000 & percent.mt < 15)
+
+#FMB
+FMB <- subset(FMB, subset = nFeature_RNA > 150 & nFeature_RNA < 6000 & percent.mt < 10)
+
+#### Load Day 3, experiment 1 filtering parameters####
+#Control
+CON <- subset(CON, subset = nFeature_RNA > 150 & nFeature_RNA < 5000 & percent.mt < 15)
+
+#FMB
+FMB <- subset(FMB, subset = nFeature_RNA > 150 & nFeature_RNA < 4000 & percent.mt < 15)
+
+#### Load Day 1, experiment 1 filtering parameters####
+#Control
+CON <- subset(CON, subset = nFeature_RNA > 150 & nFeature_RNA < 5000 & percent.mt < 15)
+
+#FMB
+FMB <- subset(FMB, subset = nFeature_RNA > 150 & nFeature_RNA < 5000 & percent.mt < 15)
+
+
+#### Plotting of filtered data####
+VlnPlot(CON, features = c("nFeature_RNA","nCount_RNA","percent.mt","percent.rb"),
+        ncol = 4,pt.size = 0.1) & theme(plot.title = element_text(size=10))
+VlnPlot(FMB, features = c("nFeature_RNA","nCount_RNA","percent.mt","percent.rb"),
+        ncol = 4,pt.size = 0.1) & theme(plot.title = element_text(size=10))
+
+
+#### Integration- NB: about 18 minutes to run####
+comb_list <- list()
+comb_list[["Control"]] <- CON
+comb_list[["FMB"]] <- FMB
+
+for (i in 1:length(comb_list)) {
+  comb_list[[i]] <- NormalizeData(comb_list[[i]], verbose = F)
+  comb_list[[i]] <- FindVariableFeatures(comb_list[[i]], selection.method = "vst", 
+                                         nfeatures = 2000, verbose = F)
+}
+
+
+#### OPTIONAL-visualise unintegrated data####
+set.seed(28)
+DefaultAssay(combined) <- "RNA"
+combined <- NormalizeData(combined, verbose = F)
+combined <- FindVariableFeatures(combined, selection.method = "vst", nfeatures = 2000, verbose = F)
+combined <- ScaleData(combined, verbose = F)
+combined <- RunPCA(combined, npcs = 30, verbose = F)
+combined <- RunUMAP(combined, reduction = "pca", dims = 1:30, verbose = F)
+DimPlot(d5e2combinednew,reduction = "umap", split.by = "orig.ident") 
+
+#### visualise integrated data####
+set.seed(28)
+DefaultAssay(combined) <- "integrated"
+combined <- ScaleData(combined, verbose = F)
+combined <- RunPCA(combined, npcs = 30, verbose = F)
+combined <- RunUMAP(combined, reduction = "pca", dims = 1:30, verbose = F)
+DimPlot(combined, reduction = "umap", split.by = "orig.ident")
+
+
+###A-Using clustree to determine optimal cluster resolution####
+combined <- FindNeighbors(combined, dims = 1:30)
+for (resolution in c(0, 0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8))
+{combined <- FindClusters(combined, resolution = resolution)
+}
+
+pdf('clustree_seurat.pdf', width = 30, height = 20)
+clustree(combined)
+dev.off()
+
+
+###B-After finding optimal resolution, use this code and enter resolution####
+combined <- FindNeighbors(combined, dims = 1:30, k.param = 10, verbose = F)
+combined <- FindClusters(combined, verbose = F, resolution = 0.2)
+DimPlot(combined,label = F) 
+fmb.randy <- combined
+DimPlot(fmb.randy.mod, group.by = "seurat_clusters") 
+DimPlot(fmb.randy.mod, group.by = "seurat_clusters", split.by = "orig.ident") 
+
+#Markers
+FindMarkers(fmb.randy, split.by = "integrated_snn_res.0.1", ident.1 = "0", logfc.threshold = 0.1)
+
+#change colors
+combined <- fmb.randy.mod
+DimPlot(combined,label = F, cols = c('0'= "#F8766D", '1'="#CD9600", '2'= "#0CB702",
+                                           '3'= "#00A9FF", '5'= "#C77CFF",'6'= "#FF61CC", '7'= "blue",
+                                     '8'= "#7CAE00",'10'= "orange"
+                                     ), split.by = "orig.ident", group.by = "seurat_clusters") 
+
+cols = c('0'='#F68282','4'='#31C53F','8'='#1FA195','6'='#B95FBB','3'='#D4D915',
+         '7'='#28CECA','1'='#ff9a36','2'='#2FF18B','10'='#aeadb3','11'='#faf4cf',
+         '5'='#CCB1F1','9'='#25aff5','12'='#A4DFF2','15'='#4B4BF7','13'='#AC8F14',
+         '14'='#E6C122')
+
+
+#### Excel file with upregulated genes####
+lapply(
+  levels(fmb.randy[["seurat_clusters"]][[1]]),
+  function(x)FindMarkers(fmb.randy,ident.1 = x, min.pct = 0.25)
+) -> cluster.markers
+
+sapply(0:(length(cluster.markers)-1),function(x) {
+  cluster.markers[[x+1]]$gene <<- rownames(cluster.markers[[x+1]])
+  cluster.markers[[x+1]]$cluster <<- x
+})
+
+as_tibble(do.call(rbind,cluster.markers)) %>% arrange(p_val_adj) -> cluster.markers
+cluster.markers
+
+setwd("")
+export()
+
+#Violin plots for figures
+VlnPlot(combined, features = c("DCN",  "LTBP1", "FBN1", "THBS1", "TGFB1", "TGFBR1",
+                                   "SMAD2", "ZFYVE16", "RBX1", "SKP1",
+                                   "ROCK1", "PPP2CA", "PPP2CB", "TGIF1",  
+                                   "GREM1", "NBL1",
+                                   "BMP2", "BMP6", "BMPR2", 
+                                   "ID1", "ID2", "ID3", "ID4", 
+                                   "SOX9", "RUNX2", "SP7", 
+                                   "COL1A1", "COL2A1", "COL3A1", 
+                                   "COL10A1", "COL11A1", "ACAN", "ALPL",
+                                   "COMP", "DPT", "IGFBP5", "MGP", "COL9A1"
+                                   ), stack = TRUE, flip = TRUE, 
+                                    group.by = "orig.ident", fill.by = "ident") +
+                                    theme(legend.position = "none") +
+                                    theme(axis.text.x = element_text(angle= 0, size=10, color="black")) + 
+                                    theme(axis.text.y = element_text(size=12, color="black"))+
+                                    theme(strip.text = element_text(size=12, face="bold")) + 
+                                    theme(axis.title = element_text(size=0,face="bold"))
+
+
+#cell proportions
+table(Idents(combined.test2))
+table(combined.test$orig.ident)
+prop.table(table(Idents(combined.test2)))
+table(Idents(combined.test2), combined.test2$orig.ident)
+prop.table(table(Idents(combined.test2), combined.test2$orig.ident), margin = 2)
+
+#Dotplot for figures
+DotPlot(, features = c("SOX9", "ACAN", "MGP", "IGFBP5", "DCN", "FMOD", "MATN3", "PRG4",
+                                    "RUNX2", "SP7", "IHH", "PTH1R", "RUNX2", "IBSP", "SPP1", "ALPL",  "DMP1",  
+                                    "COL1A1", "COL2A1", "COL9A1", "COL10A1", "COL11A1", 
+                                    "PCNA", "TOP2A", "CENPF", "MKI67"), 
+        split.by = "orig.ident")  +
+  #theme(legend.position = "none") +
+  theme(axis.text.x = element_text(size=10, color="black")) + 
+  theme(axis.text.y = element_text(size=10, color="black"))+
+  theme(strip.text = element_text(size=12, face="bold")) + 
+  theme(axis.title = element_text(size=0,face="bold"))
+
