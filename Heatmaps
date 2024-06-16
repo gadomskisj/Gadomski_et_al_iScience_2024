@@ -1,0 +1,42 @@
+library(RColorBrewer)
+library(gplots)
+setwd("")
+
+heatmap.2(as.matrix(DEGs[,2:16]), 
+          margin=c(5,5),
+          col=rev(morecols(50)),
+          trace= "none",
+          main= "DEGs", 
+          Colv= FALSE,
+          Rowv= FALSE,
+          scale = "row", 
+          labRow = DEGs[,1],
+          dendrogram = "none", 
+          density.info = "none",
+          lwid = c(1,4), 
+          lhei = c(1.5, 9),
+          cexRow = .7, 
+          cexCol = .8, 
+          keysize = 1)
+
+
+library(RColorBrewer)
+library(gplots)
+setwd("")
+mypalette <- brewer.pal(11,"RdYlBu")
+morecols <- colorRampPalette(mypalette)
+DEGs <- read.delim("~/")
+heatmap.2(as.matrix(DEGs[,2:16]), 
+          margin=c(6,6),
+          col=rev(morecols(50)),
+          trace= "none",
+          main= "DEGs", 
+          Colv= FALSE,
+          Rowv= FALSE,
+          scale = "row", 
+          labRow = DEGs[,1],
+          dendrogram = "none", 
+          density.info = "none",
+          lwid = c(1,4), 
+          lhei = c(1.5, 9)
+)
