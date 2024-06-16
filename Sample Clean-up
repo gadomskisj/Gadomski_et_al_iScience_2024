@@ -1,0 +1,91 @@
+### Script by Daniel Martin, GCBC, NIDCR
+#Step 1 Sample Cleanup
+
+library(SoupX)
+library(Seurat)
+library(future)
+
+plan("multisession", workers = 4)
+
+gc()
+
+##Define the sample names (same as folder containing the data)
+samples<-c("FMB1", "CON1")
+
+element<-"SG-D10-FMB" ## If a particular sample fails, work on each element of the loop explicitly 
+
+# removal of ambient RNA with SoupX
+
+for (element in samples) {
+  ## Load table of droplets
+  tod <- Read10X(data.dir = paste0("~/raw_feature_bc_matrix/"))
+  #tod <- Read10X(data.dir = ("~/raw_feature_bc_matrix/"))
+  
+  ## Load table of counts
+  toc <- Read10X(data.dir = paste0("~/filtered_feature_bc_matrix/"))
+  #toc <- Read10X(data.dir = ("~/filtered_feature_bc_matrix/"))
+
+  sc = SoupChannel(tod, toc)
+  srat = CreateSeuratObject(sc$toc)
+  
+  #remove data that not using
+  rm(tod)
+  rm(toc)
+  gc()
+  
+  #meta_srat <- srat@meta.data
+  
+  srat <- NormalizeData(srat)
+  srat <- FindVariableFeatures(srat, nfeatures = 4000)
+  
+  
+  # Cell-cycle scoring and regression
+
+  s.genes <- cc.genes.updated.2019$s.genes
+  g2m.genes <- cc.genes.updated.2019$g2m.genes
+  srat <- CellCycleScoring(srat, s.features = s.genes, g2m.features = g2m.genes,
+                           set.ident = TRUE)
+  rm(s.genes)
+  rm(g2m.genes)
+  gc()
+  
+  srat <- ScaleData(srat, vars.to.regress = c("S.Score", "G2M.Score"), verbose = TRUE)  ##Change accordingly if cell cycle estimation was not performed.
+  #srat <- ScaleData(srat, verbose = TRUE)
+  srat <- RunPCA(srat, npcs = 50, verbose = TRUE)
+  
+  #s.genes <- cc.genes.updated.2019$s.genes
+  #g2m.genes <- cc.genes.updated.2019$g2m.genes
+  #srat <- CellCycleScoring(srat, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+  
+  DimPlot(srat)
+  
+  #rm(s.genes)
+  #rm(g2m.genes)
+  #gc()
+  
+  srat <- FindNeighbors(srat, reduction = "pca", dims = 1:50)
+  srat <- FindClusters(srat, resolution = 1)
+  sc <- setClusters(sc,srat@active.ident)
+  sc <- autoEstCont(sc, tfidfMin = 0.5, soupQuantile = 0.0, forceAccept = TRUE)
+  sample.deSouped <- adjustCounts(sc)
+  sample <- CreateSeuratObject(sample.deSouped, project = element)
+  rm(srat)
+  rm(sc)
+  rm(sample.deSouped)
+  gc()
+  
+  meta_sample <- sample@meta.data
+  
+  # doublet id and removal
+  library(scDblFinder)
+  set.seed(432)
+  sample_sce <- as.SingleCellExperiment(sample)
+  sample_sce <- scDblFinder(sample_sce)
+  sample_Dbl <- as.Seurat(sample_sce, counts = "counts")
+  Idents(sample_Dbl) <- "scDblFinder.class"
+  sample_clean <- subset(sample_Dbl, idents = "singlet")
+  saveRDS(sample_clean, file = paste0(element,"_ready.RDS"))
+  rm(sample,sample_sce,sample_Dbl, sample_clean)
+  gc()
+}
+###Continue Seurat analysis as usual with "sample_ready" Seurat Object.
